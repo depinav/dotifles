@@ -1,0 +1,16 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	ignorecase = true
+	precomposeunicode = true
+[remote "origin"]
+	url = git@personal.github.com:depinav/oh-my-zsh-custom.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+[submodule "plugins/zsh-syntax-highlighting"]
+	url = https://github.com/zsh-users/zsh-syntax-highlighting/tree/master
+	active = true
