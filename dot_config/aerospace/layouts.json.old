@@ -1,0 +1,33 @@
+{
+    "stashWorkspace": "9",
+    "layouts": {
+        "office-main": {
+            "workspace": "1",
+            "layout": "h_tiles",
+            "orientation": "horizontal",
+            "windows": [
+                {
+                    "orientation": "vertical",
+                    "windows": [
+                        {
+                            "bundleId": "com.tinyspeck.slackmacgap",
+                            "size": "1/2"
+                        },
+                        { "bundleId": "com.electron.logseq", "size": "1/2" }
+                    ]
+                },
+                { "bundleId": "com.thebrowser.Browser", "size": "2/3" }
+            ],
+            "display": "main"
+        },
+        "office-secondary": {
+            "workspace": "2",
+            "layout": "tiles",
+            "orientation": "horizontal",
+            "windows": [
+                { "bundleId": "com.mitchellh.ghostty", "size": "1/3" },
+                { "bundleId": "dev.zed.Zed", "size": "2/3" }
+            ]
+        }
+    }
+}

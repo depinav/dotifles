@@ -1,0 +1,11 @@
+{
+  "stashWorkspace": "9",
+  "layouts": {
+    "test": {
+      "workspace": "8",
+      "layout": "tile",
+      "orientation": "horizontal",
+      "windows": [{ "bundleId": "com.google.Chrome" }]
+    }
+  }
+}
