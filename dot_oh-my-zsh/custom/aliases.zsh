@@ -94,13 +94,6 @@ alias dcupd='dcup -d'
 alias dm= 'docker-machine'
 alias dmenv='docker-machine env'
 
-# vagrant
-alias vup='vagrant up && bin/local/connect_ports.sh'
-alias vhalt='vagrant halt'
-alias vssh='vagrant ssh'
-alias vrelaod='vagrant reload'
-alias vkill='vagrant destroy'
-
 # misc
 alias plistadd='/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true"'
 alias plistdelete='/usr/libexec/PlistBuddy -c "Delete :LSUIElement"'
@@ -114,6 +107,7 @@ alias zela='zel a'
 alias zels='zel -s'
 
 # tmux
+alias tmx='tmux'
 alias tat='tmux attach -t'
 alias tns='tmux new -s'
 
