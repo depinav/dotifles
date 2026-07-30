@@ -77,6 +77,12 @@ alias npi='npm i'
 alias npis='npm i --save'
 alias npisd='npm i --save-dev'
 
+# pnpm
+alias pn='pnpm'
+alias pni='pnpm install'
+alias pnr='pnpm run'
+alias pnd='pnpm dev'
+
 # docker-compose
 alias dc='docker compose'
 alias dcd='docker compose down'
@@ -107,11 +113,10 @@ alias zel='zellij'
 alias zela='zel a'
 alias zels='zel -s'
 
-#pnpm
-alias pn='pnpm'
-alias pni='pnpm install'
-alias pnr='pnpm run'
-alias pnd='pnpm dev'
+# tmux
+alias tat='tmux attach -t'
+alias tns='tmux new -s'
+
 
 # Finder
 alias showFiles='defaults write com.apple.finder AppleShowAllFiles YES; killall Finder /System/Library/CoreServices/Finder.app'
