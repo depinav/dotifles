@@ -1,0 +1,901 @@
+import * as shared from '../sharedUtil'
+import { Neovim } from '@chemzqm/neovim'
+import { Position, Range, TextEdit } from 'vscode-languageserver-types'
+import commands from '../../commands'
+import Cursors from '../../cursors'
+import CursorsSession, { surroundChanges } from '../../cursors/session'
+import TextRange from '../../cursors/textRange'
+import { getChange, getDelta, getVisualRanges, isSurroundChange, isTextChange, splitRange, SurroundChange, TextChange } from '../../cursors/util'
+import window from '../../window'
+import workspace from '../../workspace'
+
+let nvim: Neovim
+let cursors: Cursors
+let ns: number
+before(async () => {
+  nvim = workspace.nvim
+  ns = await nvim.createNamespace('coc-cursors')
+  cursors = window.cursors
+})
+
+async function rangeCount(): Promise<number> {
+  let buf = await nvim.buffer
+  let markers = await buf.getExtMarks(ns, 0, -1)
+  return markers.length
+}
+
+describe('cursors utils', () => {
+  describe('getDelta()', () => {
+    it('should get delta count', async t => {
+      assert.strictEqual(getDelta({ prepend: [1, 'foo'], append: [1, 'bar'], remove: false }), 4)
+      assert.strictEqual(getDelta({ offset: 0, remove: 2, insert: 'foo' }), 1)
+    })
+  })
+
+  describe('surroundChanges()', () => {
+    it('should check surround changes', async t => {
+      assert.strictEqual(surroundChanges([], 0), false)
+      assert.strictEqual(surroundChanges([{ offset: 1, add: 'f' }, { offset: 3, add: 'f' }], 0), false)
+    })
+
+    it('should get surround change', async t => {
+      const getText = (newText: string): string => {
+        let r = new TextRange(0, 0, 'foo')
+        let res = getChange(r, Range.create(0, 0, 0, 3), newText) as SurroundChange
+        assert.strictEqual(isSurroundChange(res), true)
+        r.applySurroundChange(res)
+        return r.text
+      }
+      assert.strictEqual(getText('"foo"'), '"foo"')
+      assert.strictEqual(getText('o'), 'o')
+      assert.strictEqual(getText(''), '')
+    })
+  })
+
+  describe('getChange()', () => {
+    it('should get end change', async t => {
+      const getText = (character: number, newText: string) => {
+        let start = Position.create(0, character)
+        let r = new TextRange(0, 0, 'foo')
+        let res = getChange(r, Range.create(start, r.range.end), newText) as TextChange
+        assert.strictEqual(isTextChange(res), true)
+        r.applyTextChange(res)
+        return r.text
+      }
+      assert.strictEqual(getText(3, 'bar'), 'foobar')
+      assert.strictEqual(getText(1, ''), 'f')
+      assert.strictEqual(getText(2, 'ba'), 'foba')
+    })
+
+    it('should get normal change', async t => {
+      const getText = (start: number, end: number, newText: string) => {
+        let r = new TextRange(0, 0, 'foo')
+        let res = getChange(r, Range.create(0, start, 0, end), newText) as TextChange
+        assert.strictEqual(isTextChange(res), true)
+        r.applyTextChange(res)
+        return r.text
+      }
+      assert.strictEqual(getText(0, 0, 'a'), 'afoo')
+      assert.strictEqual(getText(0, 1, ''), 'oo')
+      assert.strictEqual(getText(0, 2, 'ba'), 'bao')
+    })
+
+    it('should split ranges', async t => {
+      t.after(() => editorReset(t))
+      let doc = await workspace.document
+      await doc.applyEdits([TextEdit.insert(Position.create(0, 0), 'foo\nbar\n\nend')])
+      let ranges = splitRange(doc, Range.create(0, 3, 3, 0))
+      assert.deepStrictEqual(ranges, [Range.create(1, 0, 1, 3)])
+    })
+
+    it('should get visual ranges', async t => {
+      t.after(() => editorReset(t))
+      let doc = await workspace.document
+      await doc.applyEdits([TextEdit.insert(Position.create(0, 0), 'foo\nbar\nend')])
+      let ranges = getVisualRanges(doc, Range.create(0, 3, 3, 0))
+      assert.strictEqual(ranges.length, 4)
+    })
+  })
+})
+
+describe('cursors', () => {
+  afterEach(editorReset)
+
+  afterEach(() => {
+    cursors.reset()
+  })
+
+  describe('cancel()', () => {
+    it('should cancel cursors session', async t => {
+      cursors.cancel(999)
+      let doc = await workspace.document
+      cursors.cancel(doc.bufnr)
+      await nvim.call('setline', [1, ['a', 'b']])
+      await nvim.call('cursor', [1, 1])
+      await doc.synchronize()
+      await cursors.select(doc.bufnr, 'position', 'n')
+      let activated = await cursors.isActivated()
+      assert.strictEqual(activated, true)
+      cursors.cancel(doc.bufnr)
+      activated = await cursors.isActivated()
+      assert.strictEqual(activated, false)
+    })
+
+    it('should cancel when no have ranges', async t => {
+      let doc = await workspace.document
+      let session = cursors.createSession(doc)
+      session.checkRanges()
+      let activated = await cursors.isActivated()
+      assert.strictEqual(activated, false)
+      session.cancel()
+      session.dispose()
+    })
+  })
+
+  describe('select()', () => {
+    it('should throw with unsupported kind', async t => {
+      let doc = await workspace.document
+      let fn = async () => {
+        await cursors.select(doc.bufnr, 'undefined', 'n')
+      }
+      await assert.rejects(fn(), /not supported/)
+    })
+
+    it('should select by position', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['a', 'b']])
+      await nvim.call('cursor', [1, 1])
+      await doc.synchronize()
+      await cursors.select(doc.bufnr, 'position', 'n')
+      let n = await rangeCount()
+      assert.strictEqual(n, 1)
+      await nvim.setOption('virtualedit', 'onemore')
+      await nvim.call('cursor', [2, 2])
+      await cursors.select(doc.bufnr, 'position', 'n')
+      n = await rangeCount()
+      assert.strictEqual(n, 2)
+      await cursors.select(doc.bufnr, 'position', 'n')
+      n = await rangeCount()
+      assert.strictEqual(n, 1)
+    })
+
+    it('should select by word', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['foo', 'bar']])
+      await nvim.call('cursor', [1, 1])
+      await doc.synchronize()
+      await cursors.select(doc.bufnr, 'word', 'n')
+      let n = await rangeCount()
+      assert.strictEqual(n, 1)
+      await nvim.call('cursor', [2, 2])
+      await cursors.select(doc.bufnr, 'word', 'n')
+      n = await rangeCount()
+      assert.strictEqual(n, 2)
+      await cursors.select(doc.bufnr, 'word', 'n')
+      n = await rangeCount()
+      assert.strictEqual(n, 1)
+    })
+
+    it('should toggle select', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['foo', 'bar']])
+      await nvim.call('cursor', [1, 1])
+      await doc.synchronize()
+      await cursors.select(doc.bufnr, 'word', 'n')
+      let n = await rangeCount()
+      assert.strictEqual(n, 1)
+      await cursors.select(doc.bufnr, 'word', 'n')
+      n = await rangeCount()
+      assert.strictEqual(n, 0)
+      let activated = await doc.buffer.getVar('coc_cursors_activated')
+      assert.strictEqual(activated, 0)
+    })
+
+    it('should select last character', async t => {
+      let doc = await workspace.document
+      await nvim.setOption('virtualedit', 'onemore')
+      await nvim.call('setline', [1, ['}', '{']])
+      await nvim.call('cursor', [1, 2])
+      await doc.synchronize()
+      await cursors.select(doc.bufnr, 'word', 'n')
+      let n = await rangeCount()
+      assert.strictEqual(n, 1)
+      await nvim.call('cursor', [2, 1])
+      await doc.synchronize()
+      await cursors.select(doc.bufnr, 'word', 'n')
+      n = await rangeCount()
+      assert.strictEqual(n, 2)
+    })
+
+    it('should select by visual range', async t => {
+      let doc = await workspace.document
+      await cursors.select(doc.bufnr, 'range', 'v')
+      let activated = await cursors.isActivated()
+      assert.strictEqual(activated, false)
+      await nvim.call('setline', [1, ['"foo"', '"bar"']])
+      await nvim.call('cursor', [1, 1])
+      await nvim.command('normal! vE')
+      await doc.synchronize()
+      await cursors.select(doc.bufnr, 'range', 'v')
+      let n = await rangeCount()
+      assert.strictEqual(n, 1)
+      await nvim.call('cursor', [2, 1])
+      await nvim.command('normal! vE')
+      await cursors.select(doc.bufnr, 'range', 'v')
+      n = await rangeCount()
+      assert.strictEqual(n, 2)
+      await cursors.select(doc.bufnr, 'range', 'v')
+      n = await rangeCount()
+      assert.strictEqual(n, 1)
+    })
+
+    it('should select visual blocks', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['let x = "foo"', 'let y = "bar"']])
+      await doc.synchronize()
+      await nvim.call('cursor', [1, 1])
+      await nvim.input('<C-v>')
+      await nvim.input('je')
+      await shared.waitFor('mode', [], new RegExp(`[${String.fromCharCode(0x16)}v]`, 'i'))
+      await cursors.select(doc.bufnr, 'range', '\x16')
+      let n = await rangeCount()
+      assert.strictEqual(n, 2)
+    })
+
+    it('should select by operator char type', async t => {
+      await nvim.command('nmap x  <Plug>(coc-cursors-operator)')
+      let bufnr = await nvim.call('bufnr', ['%']) as number
+      await nvim.call('setline', [1, ['"short"', '"long"']])
+      await nvim.call('cursor', [1, 2])
+      await nvim.input('xi"')
+      await shared.waitValue(() => {
+        let s = cursors.getSession(bufnr)
+        return s ? s.currentRanges.length : 0
+      }, 1)
+    })
+
+    it('should select by operator line type', async t => {
+      await nvim.command('nmap x  <Plug>(coc-cursors-operator)')
+      let bufnr = await nvim.call('bufnr', ['%']) as number
+      await nvim.call('setline', [1, ['"short"', '"long"']])
+      await nvim.call('cursor', [1, 2])
+      await nvim.input('xap')
+      await shared.waitValue(() => {
+        let s = cursors.getSession(bufnr)
+        return s ? s.currentRanges.length : 0
+      }, 2)
+    })
+  })
+
+  describe('addRanges()', () => {
+    it('should add ranges', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['foo foo foo', 'bar bar']])
+      await doc.synchronize()
+      let ranges = [
+        Range.create(0, 0, 0, 3),
+        Range.create(0, 4, 0, 7),
+        Range.create(0, 8, 0, 11),
+        Range.create(1, 0, 1, 3),
+        Range.create(1, 4, 1, 7)
+      ]
+      await commands.executeCommand('editor.action.addRanges', ranges)
+      let n = await rangeCount()
+      assert.strictEqual(n, 5)
+    })
+  })
+
+  describe('cancelRanges command', () => {
+    it('should cancel cursors session of current buffer (#5052)', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['foo foo foo', 'bar bar']])
+      await doc.synchronize()
+      let ranges = [
+        Range.create(0, 0, 0, 3),
+        Range.create(0, 4, 0, 7),
+      ]
+      await commands.executeCommand('editor.action.addRanges', ranges)
+      assert.notStrictEqual(cursors.getSession(doc.bufnr), undefined)
+      await commands.executeCommand('editor.action.cancelRanges')
+      assert.strictEqual(cursors.getSession(doc.bufnr), undefined)
+      assert.strictEqual(await cursors.isActivated(), false)
+    })
+  })
+
+  describe('validChange()', () => {
+    it('should check valid change', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['foo', 'foo', '']])
+      await doc.synchronize()
+      let ranges = [
+        Range.create(0, 0, 0, 3),
+        Range.create(1, 0, 1, 3),
+      ]
+      await shared.doAction('addRanges', ranges)
+      let cs = cursors.getSession(doc.bufnr)
+      assert.strictEqual(cs.validChange(Range.create(0, 0, 1, 0), ''), false)
+      assert.strictEqual(cs.validChange(Range.create(0, 0, 2, 0), '\n\n'), false)
+      assert.strictEqual(cs.validChange(Range.create(1, 0, 1, 3), 'bar'), false)
+    })
+  })
+
+  describe('onChange()', () => {
+    let session: CursorsSession
+
+    function edit(sl: number, sc: number, el: number, ec: number, text: string): TextEdit {
+      let r = Range.create(sl, sc, el, ec)
+      return TextEdit.replace(r, text)
+    }
+
+    async function assertEdits(edits: TextEdit[], characters: number[], line?: string) {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['foo foo foo', '']])
+      await doc.synchronize()
+      let ranges = [
+        Range.create(0, 0, 0, 3),
+        Range.create(0, 4, 0, 7),
+        Range.create(0, 8, 0, 11),
+      ]
+      await cursors.addRanges(ranges)
+      session = cursors.getSession(doc.bufnr)
+      let p = new Promise(resolve => {
+        let disposable = session.onDidUpdate(() => {
+          disposable.dispose()
+          resolve(undefined)
+        })
+        void doc.applyEdits(edits)
+      })
+      await p
+      if (line != null) {
+        assert.strictEqual(doc.getline(0), line)
+      }
+      let arr: number[] = []
+      session.currentRanges.forEach(r => {
+        arr.push(r.start.character, r.end.character)
+      })
+      assert.deepStrictEqual(arr, characters)
+      session.cancel()
+    }
+
+    it('should adjust on text insert', async t => {
+      await assertEdits([edit(0, 0, 0, 0, 'bar\n')], [0, 3, 4, 7, 8, 11])
+      await assertEdits([edit(0, 0, 0, 0, 'b')], [0, 4, 5, 9, 10, 14], 'bfoo bfoo bfoo')
+      await assertEdits([edit(0, 1, 0, 1, 'b')], [0, 4, 5, 9, 10, 14], 'fboo fboo fboo')
+      await assertEdits([edit(0, 3, 0, 3, 'b')], [0, 4, 5, 9, 10, 14], 'foob foob foob')
+      await assertEdits([edit(0, 3, 0, 4, '\n')], [0, 3, 0, 3, 4, 7], 'foo')
+      await assertEdits([edit(1, 0, 1, 0, 'bar')], [0, 3, 4, 7, 8, 11])
+      await nvim.call('setline', [1, ['foo foo foo', '']])
+      await nvim.call('cursor', [1, 4])
+      await assertEdits([edit(0, 8, 0, 8, 'b')], [0, 4, 5, 9, 10, 14], 'bfoo bfoo bfoo')
+      let col = await nvim.call('col', ['.'])
+      assert.strictEqual(col, 5)
+    })
+
+    it('should adjust on text delete', async t => {
+      await assertEdits([edit(0, 2, 0, 3, '')], [0, 2, 3, 5, 6, 8], 'fo fo fo')
+      await assertEdits([edit(0, 3, 0, 4, '')], [0, 3, 3, 6, 7, 10], 'foofoo foo')
+      await assertEdits([edit(0, 4, 0, 7, '')], [0, 0, 1, 1, 2, 2], '  ')
+      await nvim.setLine('foo foo')
+      await nvim.call('cursor', [1, 4])
+      await assertEdits([edit(0, 3, 0, 7, '')], [0, 3, 4, 7], 'foo foo')
+      await assertEdits([edit(0, 1, 0, 11, '')], [], 'f')
+    })
+
+    it('should adjust on text change', async t => {
+      await assertEdits([edit(0, 0, 0, 0, '"'), edit(0, 3, 0, 3, '"')], [0, 5, 6, 11, 12, 17], '"foo" "foo" "foo"')
+      await assertEdits([edit(0, 0, 0, 1, 'b')], [0, 3, 4, 7, 8, 11], 'boo boo boo')
+      await assertEdits([edit(0, 0, 0, 3, 'ba')], [0, 2, 3, 5, 6, 8], 'ba ba ba')
+      await nvim.call('setline', [1, ['', '']])
+      await nvim.call('cursor', [2, 1])
+      await assertEdits([edit(0, 4, 0, 5, 'ba')], [0, 4, 5, 9, 10, 14], 'baoo baoo baoo')
+      let col = await nvim.call('col', ['.'])
+      assert.strictEqual(col, 1)
+    })
+
+    it('should adjust on range remove', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['foo', 'foobar']])
+      await doc.synchronize()
+      let ranges = [Range.create(0, 0, 0, 3), Range.create(1, 0, 1, 6)]
+      await cursors.addRanges(ranges)
+      session = cursors.getSession(doc.bufnr)
+      await doc.applyEdits([TextEdit.del(Range.create(0, 0, 0, 3))])
+      await doc.synchronize()
+      let lines = await doc.buffer.lines
+      assert.deepStrictEqual(lines, ['', ''])
+      session.cancel()
+    })
+
+    it('should adjust on undo & redo', async t => {
+      let doc = await workspace.document
+      let edits = [edit(0, 0, 0, 0, '"'), edit(0, 3, 0, 3, '"')]
+      await nvim.call('setline', [1, ['foo foo foo', '']])
+      await doc.synchronize()
+      let ranges = [
+        Range.create(0, 0, 0, 3),
+        Range.create(0, 4, 0, 7),
+        Range.create(0, 8, 0, 11),
+      ]
+      await cursors.addRanges(ranges)
+      session = cursors.getSession(doc.bufnr)
+      let p = new Promise(resolve => {
+        let disposable = session.onDidUpdate(() => {
+          disposable.dispose()
+          resolve(undefined)
+        })
+        void doc.applyEdits(edits)
+      })
+      await p
+      let updated = new Promise<void>(resolve => {
+        let disposable = session.onDidUpdate(() => {
+          disposable.dispose()
+          resolve()
+        })
+      })
+      await nvim.command('undo')
+      await updated
+      assert.strictEqual(await nvim.getLine(), 'foo foo foo')
+      assert.deepStrictEqual(session.currentRanges, ranges)
+    })
+
+    it('should highlight on empty content change', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['foo', '']])
+      await doc.synchronize()
+      let ranges = [Range.create(0, 0, 0, 3)]
+      await cursors.addRanges(ranges)
+      session = cursors.getSession(doc.bufnr)
+      await nvim.call('setline', [1, ['foo', '']])
+      await doc.synchronize()
+      let c = await rangeCount()
+      assert.strictEqual(c, 1)
+    })
+
+    it('should cancel when insert line break', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['foo', '']])
+      await doc.synchronize()
+      let ranges = [Range.create(0, 0, 0, 3)]
+      await cursors.addRanges(ranges)
+      session = cursors.getSession(doc.bufnr)
+      await nvim.call('cursor', [1, 2])
+      await nvim.input('i<cr>')
+      await doc.synchronize()
+      let activated = await cursors.isActivated()
+      assert.strictEqual(activated, false)
+    })
+  })
+
+  describe('applyComposedEdit()', () => {
+    async function setup(): Promise<CursorsSession> {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['bar foo foo', 'foo']])
+      await doc.synchronize()
+      let session = cursors.createSession(doc)
+      session.addRanges([
+        Range.create(0, 4, 0, 7),
+        Range.create(0, 8, 0, 11),
+        Range.create(1, 0, 1, 3),
+      ])
+      return session
+    }
+
+    it('should check change before first range', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['abc foob foob', 'foob'])
+      assert.strictEqual(res, false)
+    })
+
+    it('should check change of first range', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar foo foob', 'foob'])
+      assert.strictEqual(res, false)
+    })
+
+    it('should check delete exceed range', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar fofoo', 'foo'])
+      assert.strictEqual(res, false)
+    })
+
+    it('should check content prepend', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar bfoo bfoo', 'bfoo'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 8),
+        Range.create(0, 9, 0, 13),
+        Range.create(1, 0, 1, 4),
+      ])
+      s = await setup()
+      doc = await workspace.document
+      res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar bfoo bfoo', 'xfoo'])
+      assert.strictEqual(res, false)
+    })
+
+    it('should check content insert', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar fboo fboo', 'fboo'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 8),
+        Range.create(0, 9, 0, 13),
+        Range.create(1, 0, 1, 4),
+      ])
+    })
+
+    it('should check content append', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar foob foob', 'foob'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 8),
+        Range.create(0, 9, 0, 13),
+        Range.create(1, 0, 1, 4),
+      ])
+    })
+
+    it('should check content delete #1', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar oo oo', 'oo'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 6),
+        Range.create(0, 7, 0, 9),
+        Range.create(1, 0, 1, 2),
+      ])
+    })
+
+    it('should check content delete #2', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar  ', ''])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 4),
+        Range.create(0, 5, 0, 5),
+        Range.create(1, 0, 1, 0),
+      ])
+    })
+
+    it('should check content delete #3', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar fo fo', 'fo'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 6),
+        Range.create(0, 7, 0, 9),
+        Range.create(1, 0, 1, 2),
+      ])
+    })
+
+    it('should check content change #1', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar fa fa', 'fa'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 6),
+        Range.create(0, 7, 0, 9),
+        Range.create(1, 0, 1, 2),
+      ])
+    })
+
+    it('should check content change #1', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar fa fa', 'fa'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 6),
+        Range.create(0, 7, 0, 9),
+        Range.create(1, 0, 1, 2),
+      ])
+    })
+
+    it('should check content change #2', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar ab ab', 'ab'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 6),
+        Range.create(0, 7, 0, 9),
+        Range.create(1, 0, 1, 2),
+      ])
+    })
+
+    it('should check content change #3', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar xfa xfa', 'xfa'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 7),
+        Range.create(0, 8, 0, 11),
+        Range.create(1, 0, 1, 3),
+      ])
+    })
+
+    it('should check content change #4', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar xfao xfao', 'xfao'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 8),
+        Range.create(0, 9, 0, 13),
+        Range.create(1, 0, 1, 4),
+      ])
+    })
+
+    it('should check surround add', async t => {
+      let s = await setup()
+      let doc = await workspace.document
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar "foo" "foo"', '"foo"'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 9),
+        Range.create(0, 10, 0, 15),
+        Range.create(1, 0, 1, 5),
+      ])
+    })
+
+    it('should check surround remove', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['bar "foo" "foo"', '"foo"']])
+      await doc.synchronize()
+      let s = cursors.createSession(doc)
+      s.addRanges([
+        Range.create(0, 4, 0, 9),
+        Range.create(0, 10, 0, 15),
+        Range.create(1, 0, 1, 5),
+      ])
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), ['bar foo foo', 'foo'])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 7),
+        Range.create(0, 8, 0, 11),
+        Range.create(1, 0, 1, 3),
+      ])
+    })
+
+    it('should check surround change', async t => {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['bar "foo" "foo"', '"foo"']])
+      await doc.synchronize()
+      let s = cursors.createSession(doc)
+      s.addRanges([
+        Range.create(0, 4, 0, 9),
+        Range.create(0, 10, 0, 15),
+        Range.create(1, 0, 1, 5),
+      ])
+      let res = s.applyComposedEdit(doc.textDocument.lines.slice(), [`bar 'foo' 'foo'`, `'foo'`])
+      assert.strictEqual(res, true)
+      assert.deepStrictEqual(s.currentRanges, [
+        Range.create(0, 4, 0, 9),
+        Range.create(0, 10, 0, 15),
+        Range.create(1, 0, 1, 5),
+      ])
+    })
+  })
+
+  describe('key mappings', () => {
+    async function setup(): Promise<void> {
+      let doc = await workspace.document
+      await nvim.call('setline', [1, ['a', 'b', 'c']])
+      await doc.synchronize()
+      let session = cursors.createSession(doc)
+      session.addRanges([
+        Range.create(0, 0, 0, 1),
+        Range.create(1, 0, 1, 1),
+        Range.create(2, 0, 2, 1),
+      ])
+    }
+
+    async function hasKeymap(key): Promise<boolean> {
+      let buf = await nvim.buffer
+      let keymaps = await buf.getKeymap('n') as any
+      return keymaps.find(o => o.lhs == key) != null
+    }
+
+    it('should setup cancel keymap', async t => {
+      await setup()
+      let count = await rangeCount()
+      assert.strictEqual(count, 3)
+      await nvim.input('<esc>')
+      await shared.waitValue(() => rangeCount(), 0)
+      count = await rangeCount()
+      assert.strictEqual(count, 0)
+      let has = await hasKeymap('<Esc>')
+      assert.strictEqual(has, false)
+    })
+
+    it('should next key wrapscan', async t => {
+      await setup()
+      await nvim.call('cursor', [1, 1])
+      const next = async (line: number, character: number) => {
+        await nvim.input('<C-n>')
+        await shared.waitValue(async () => {
+          return await nvim.call('coc#cursor#position')
+        }, [line, character])
+      }
+      await next(1, 0)
+      await next(2, 0)
+      await next(0, 0)
+    })
+
+    it('should previous key wrapscan', async t => {
+      await setup()
+      await nvim.call('cursor', [3, 1])
+      const prev = async (line: number, character: number) => {
+        await nvim.input('<C-p>')
+        await shared.waitValue(async () => {
+          return await nvim.call('coc#cursor#position')
+        }, [line, character])
+      }
+      await prev(1, 0)
+      await prev(0, 0)
+      await prev(2, 0)
+    })
+
+    it('should next key no wrapscan', async t => {
+      shared.updateConfiguration('cursors.wrapscan', false)
+      await setup()
+      await nvim.call('cursor', [3, 1])
+      const next = async (line: number, character: number) => {
+        await nvim.input('<C-n>')
+        await shared.waitValue(() => nvim.call('coc#cursor#position'), [line, character])
+        let cursor = await nvim.call('coc#cursor#position')
+        assert.deepStrictEqual(cursor, [line, character])
+      }
+      await next(2, 0)
+    })
+
+    it('should previous key no wrapscan', async t => {
+      shared.updateConfiguration('cursors.wrapscan', false)
+      await setup()
+      await nvim.call('cursor', [1, 1])
+      const prev = async (line: number, character: number) => {
+        await nvim.input('<C-p>')
+        await shared.waitValue(() => nvim.call('coc#cursor#position'), [line, character])
+        let cursor = await nvim.call('coc#cursor#position')
+        assert.deepStrictEqual(cursor, [line, character])
+      }
+      await prev(0, 0)
+    })
+  })
+})
+
+describe('cursors case conversion (#5755)', () => {
+  afterEach(editorReset)
+  afterEach(() => window.cursors.reset())
+
+  async function selectWords(words: string[]) {
+    const nvim = workspace.nvim
+    const doc = await workspace.document
+    await nvim.call('setline', [1, words.map((word, i) => `${word} = ${i + 1}`)])
+    await doc.synchronize()
+    for (let line = 1; line <= words.length; line++) {
+      await nvim.call('cursor', [line, 1])
+      await nvim.input('<Plug>(coc-cursors-word)')
+      await shared.waitValue(() => window.cursors.getSession(doc.bufnr)?.currentRanges.length, line)
+    }
+    return doc
+  }
+
+  it('should uppercase each selected word independently', async t => {
+    const nvim = workspace.nvim
+    const doc = await selectWords(['alpha', 'beta', 'gamma'])
+    assert.deepStrictEqual(window.cursors.getSession(doc.bufnr).currentRanges, [
+      Range.create(0, 0, 0, 5),
+      Range.create(1, 0, 1, 4),
+      Range.create(2, 0, 2, 5),
+    ])
+    const session = window.cursors.getSession(doc.bufnr)
+    let updated = false
+    t.after(session.onDidUpdate(() => { updated = true }).dispose)
+    await nvim.input('viwU')
+    await shared.waitValue(() => updated, true)
+    assert.deepStrictEqual(await doc.buffer.lines, ['ALPHA = 1', 'BETA = 2', 'GAMMA = 3'])
+  })
+
+  for (const [keys, words, expected] of [
+    ['viwu', ['ALPHA', 'BETA', 'GAMMA'], ['alpha', 'beta', 'gamma']],
+    ['gUiw', ['alpha', 'bETA', 'Gamma'], ['ALPHA', 'BETA', 'GAMMA']],
+    ['guiw', ['ALpha', 'BETA', 'gAMMa'], ['alpha', 'beta', 'gamma']],
+    ['viwu', ['İ', 'BETA', 'GAMMA'], ['i', 'beta', 'gamma']],
+    ['ciwOTHER<Esc>', ['alpha', 'beta', 'gamma'], ['OTHER', 'OTHER', 'OTHER']],
+    ['rG', ['alpha', 'beta', 'gamma'], ['Glpha', 'Geta', 'Gamma']],
+  ] as [string, string[], string[]][]) {
+    it(`should synchronize ${keys} on ${words.join(', ')}`, async () => {
+      const doc = await selectWords(words)
+      await workspace.nvim.input(keys)
+      await shared.waitValue(() => doc.buffer.lines, expected.map((word, i) => `${word} = ${i + 1}`))
+      assert.deepStrictEqual(window.cursors.getSession(doc.bufnr)?.currentRanges,
+        expected.map((word, i) => Range.create(i, 0, i, word.length)))
+    })
+  }
+
+  it('should match native Unicode uppercase conversion', async () => {
+    const nvim = workspace.nvim
+    const words = ['école', 'beta', 'straße']
+    const expected: string[] = []
+    // Use actual native operations as the oracle; Unicode tables differ
+    // between editor versions (notably the uppercase form of sharp s).
+    for (const word of words) {
+      await nvim.setLine(word)
+      await nvim.command('normal! 0viwU')
+      expected.push(await nvim.getLine())
+    }
+    const doc = await selectWords(words)
+    await nvim.input('viwU')
+    await shared.waitValue(() => doc.buffer.lines, expected.map((word, i) => `${word} = ${i + 1}`))
+  })
+
+  it('should copy an unrelated uppercase replacement literally', async () => {
+    const doc = await selectWords(['alpha', 'beta', 'gamma'])
+    await doc.applyEdits([TextEdit.replace(Range.create(2, 0, 2, 5), 'OTHER')])
+    await shared.waitValue(() => doc.buffer.lines, ['OTHER = 1', 'OTHER = 2', 'OTHER = 3'])
+  })
+
+  it('should not apply a stale conversion after another edit', async t => {
+    const doc = await selectWords(['alpha', 'beta', 'gamma'])
+    const nvim = workspace.nvim
+    const call = nvim.call.bind(nvim)
+    let release: () => void
+    let entered = false
+    const gate = new Promise<void>(resolve => { release = resolve })
+    t.after(() => release())
+    t.mock.method(nvim, 'call', (method: string, args: unknown[], notify?: boolean) => {
+      if (method === 'map') {
+        entered = true
+        return gate.then(() => call(method, args))
+      }
+      return notify ? call(method, args, true) : call(method, args)
+    })
+    await nvim.input('viwU')
+    await shared.waitValue(() => entered, true)
+    await doc.applyEdits([TextEdit.insert({ line: 0, character: 9 }, '!')])
+    release()
+    await shared.waitValue(() => window.cursors.getSession(doc.bufnr), undefined)
+    assert.deepStrictEqual(await doc.buffer.lines, ['alpha = 1!', 'beta = 2', 'GAMMA = 3'])
+  })
+
+  it('should preserve same-line ranges and subsequent edits', async () => {
+    const nvim = workspace.nvim
+    const doc = await workspace.document
+    await nvim.setLine('alpha beta Gamma')
+    await doc.synchronize()
+    await window.cursors.addRanges([
+      Range.create(0, 0, 0, 5), Range.create(0, 6, 0, 10), Range.create(0, 11, 0, 16)
+    ])
+    await nvim.call('cursor', [1, 12])
+    await nvim.input('viwU')
+    await shared.waitValue(() => doc.buffer.lines, ['ALPHA BETA GAMMA'])
+    await nvim.input('A!<Esc>')
+    await shared.waitValue(() => doc.buffer.lines, ['ALPHA! BETA! GAMMA!'])
+    assert.deepStrictEqual(window.cursors.getSession(doc.bufnr)?.currentRanges, [
+      Range.create(0, 0, 0, 6), Range.create(0, 7, 0, 12), Range.create(0, 13, 0, 19)
+    ])
+  })
+
+  it('should undo and redo the batch as one change', async () => {
+    const doc = await selectWords(['alpha', 'beta', 'gamma'])
+    const nvim = workspace.nvim
+    await nvim.input('viwU')
+    await shared.waitValue(() => doc.buffer.lines, ['ALPHA = 1', 'BETA = 2', 'GAMMA = 3'])
+    await nvim.input('u')
+    await shared.waitValue(() => doc.buffer.lines, ['alpha = 1', 'beta = 2', 'gamma = 3'])
+    await nvim.input('<C-r>')
+    await shared.waitValue(() => doc.buffer.lines, ['ALPHA = 1', 'BETA = 2', 'GAMMA = 3'])
+  })
+})

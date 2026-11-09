@@ -1,0 +1,595 @@
+import * as shared from '../sharedUtil'
+import { Neovim } from '@chemzqm/neovim'
+import os from 'os'
+import path from 'path'
+import { CancellationToken, DidCloseTextDocumentNotification, DidOpenTextDocumentNotification, DocumentDiagnosticRequest, Position, TextEdit } from 'vscode-languageserver-protocol'
+import { TextDocument } from 'vscode-languageserver-textdocument'
+import { URI } from 'vscode-uri'
+import * as lsclient from '../../language-client'
+import { BackgroundScheduler, DiagnosticRequestor, DocumentPullStateTracker, PullState } from '../../language-client/diagnostic'
+import { CancellationError } from '../../util/errors'
+import window from '../../window'
+import workspace from '../../workspace'
+
+
+
+function getId(uri: string): number {
+  let ms = uri.match(/\d+$/)
+  return ms ? Number(ms[0]) : undefined
+}
+
+function createDocument(id: number, version = 1): TextDocument {
+  let uri = `file:///${id}`
+  return TextDocument.create(uri, '', version, '')
+}
+
+function createUri(id: number): URI {
+  return URI.file(id.toString())
+}
+
+describe('BackgroundScheduler', () => {
+  it('should schedule documents by add', async t => {
+    let uris: string[] = []
+    let client = { error: () => {} }
+    let s = new BackgroundScheduler(client as any, {
+      pull(document) {
+        uris.push(document.uri)
+      },
+      pullAsync(document) {
+        uris.push(document.uri)
+        return Promise.resolve(undefined)
+      }
+    } as any)
+    s.add(createDocument(1))
+    s.add(createDocument(1))
+    s.add(createDocument(2))
+    s.add(createDocument(3))
+    s.trigger()
+    await shared.waitValue(() => {
+      return uris.length
+    }, 3)
+    let ids = uris.map(u => getId(u))
+    assert.deepStrictEqual(ids, [1, 2, 3])
+  })
+
+  it('should schedule documents by remove', async t => {
+    let uris: string[] = []
+    let client = { error: () => {} }
+    let s = new BackgroundScheduler(client as any, {
+      pull(document) {
+        uris.push(document.uri)
+      },
+      pullAsync(document) {
+        uris.push(document.uri)
+        return Promise.resolve(undefined)
+      }
+    } as any)
+    s.add(createDocument(1))
+    s.add(createDocument(2))
+    s.remove(createDocument(2))
+    s.add(createDocument(3))
+    s.remove(createDocument(3))
+    s.trigger()
+    s.trigger()
+    await shared.waitValue(() => {
+      return uris.length
+    }, 1)
+    let ids = uris.map(u => getId(u))
+    assert.deepStrictEqual(ids, [1])
+    s.dispose()
+  })
+})
+
+describe('DocumentPullStateTracker', () => {
+  it('should track document', async t => {
+    let tracker = new DocumentPullStateTracker()
+    let state = tracker.track(PullState.document, createDocument(1))
+    let other = tracker.track(PullState.document, createDocument(1))
+    assert.strictEqual(state, other)
+    tracker.track(PullState.workspace, createDocument(3))
+    let id = 'dcf06d3b-79f6-4a5e-bc8d-d3334f7b4cad'
+    tracker.update(PullState.document, createDocument(1, 2), id)
+    tracker.update(PullState.document, createDocument(2, 2), 'f758ae47-c94e-406e-ba41-0f3bb2fe4fc7')
+    let curr = tracker.getResultId(PullState.document, createDocument(1, 2))
+    assert.strictEqual(curr, id)
+    assert.strictEqual(tracker.getResultId(PullState.workspace, createDocument(1, 2)), undefined)
+    tracker.unTrack(PullState.document, createDocument(2, 2))
+    assert.deepStrictEqual(tracker.trackingDocuments(), ['file:///1'])
+    tracker.update(PullState.workspace, createDocument(3, 2), 'fcb905e2-8edb-4239-9150-198c8175ed4a')
+    tracker.update(PullState.workspace, createDocument(1, 2), 'fe96d175-c19f-4705-bff1-101bf83b2953')
+    assert.strictEqual(tracker.tracks(PullState.workspace, createDocument(3, 1)), true)
+    assert.strictEqual(tracker.tracks(PullState.document, createDocument(4, 1)), false)
+    let res = tracker.getAllResultIds()
+    assert.strictEqual(res.length, 2)
+  })
+
+  it('should track URI', async t => {
+    let tracker = new DocumentPullStateTracker()
+    let state = tracker.track(PullState.document, createUri(1), undefined)
+    let other = tracker.track(PullState.document, createUri(1), undefined)
+    assert.strictEqual(state, other)
+    tracker.track(PullState.workspace, createUri(3), undefined)
+    let id = 'dcf06d3b-79f6-4a5e-bc8d-d3334f7b4cad'
+    tracker.update(PullState.document, createUri(1), undefined, id)
+    tracker.update(PullState.document, createUri(2), undefined, 'f758ae47-c94e-406e-ba41-0f3bb2fe4fc7')
+    let curr = tracker.getResultId(PullState.document, createUri(1))
+    assert.strictEqual(curr, id)
+    tracker.unTrack(PullState.document, createUri(2))
+    assert.deepStrictEqual(tracker.trackingDocuments(), ['file:///1'])
+    tracker.update(PullState.workspace, createUri(3), undefined, undefined)
+    tracker.update(PullState.workspace, createUri(1), undefined, 'fe96d175-c19f-4705-bff1-101bf83b2953')
+    assert.strictEqual(tracker.tracks(PullState.workspace, createUri(3)), true)
+    assert.strictEqual(tracker.tracks(PullState.document, createUri(4)), false)
+    let res = tracker.getAllResultIds()
+    assert.strictEqual(res.length, 1)
+  })
+})
+
+describe('DiagnosticRequestor', () => {
+  function createRequestor(t: any, options: any = {}): { manager: DiagnosticRequestor, client: any } {
+    const client: any = {
+      clientOptions: { diagnosticPullOptions: {} },
+      middleware: {},
+      error: t.mock.fn(),
+      sendRequest: t.mock.fn(),
+      handleFailedRequest: t.mock.fn(),
+      onProgress: t.mock.fn(() => ({ dispose: () => {} }))
+    }
+    const manager = new DiagnosticRequestor(client, {
+      workspaceDiagnostics: true,
+      identifier: 'test',
+      ...options
+    })
+    return { manager, client }
+  }
+
+  it('should not reschedule workspace pull after dispose', async t => {
+    let calls = 0
+    let resolvePull: (value?: any) => void
+    const { manager, client } = createRequestor(t)
+    client.middleware.provideWorkspaceDiagnostics = () => {
+      calls++
+      return new Promise(res => {
+        resolvePull = res
+      })
+    }
+    manager.pullWorkspace()
+    await shared.waitValue(() => calls, 1)
+    manager.dispose()
+    resolvePull({ items: [] })
+    await shared.waitValue(() => calls, 1)
+    assert.strictEqual(calls, 1)
+  })
+
+  it('should reset workspace error counter on success', async t => {
+    let calls = 0
+    const { manager, client } = createRequestor(t)
+    client.middleware.provideWorkspaceDiagnostics = () => {
+      calls++
+      if (calls <= 3) return Promise.reject(new Error('fail'))
+      if (calls == 4) return Promise.resolve({ items: [] })
+      return Promise.reject(new Error('fail'))
+    }
+    manager.pullWorkspace()
+    // 3 errors, one success, then 6 more errors stop the loop (counter resets
+    // on success so only consecutive errors count).
+    await shared.waitValue(() => calls, 10)
+    await shared.wait(100)
+    assert.strictEqual(calls, 10)
+  })
+
+  it('should not repull a forgotten document when its request is cancelled', async t => {
+    let calls = 0
+    const { manager, client } = createRequestor(t, { workspaceDiagnostics: false })
+    client.middleware.provideDiagnostics = (_document: any, _previous: any, token: any, _next: any) => {
+      calls++
+      return new Promise((_resolve, reject) => {
+        token.onCancellationRequested(() => reject(new CancellationError()))
+      })
+    }
+    let visible = t.mock.method(workspace.tabs, 'isVisible', () => true)
+    try {
+      let doc = createDocument(1)
+      let p = manager.pullAsync(doc)
+      await shared.waitValue(() => calls, 1)
+      manager.forgetDocument(doc)
+      await p
+      await shared.waitValue(() => calls, 1)
+      assert.strictEqual(calls, 1)
+    } finally {
+    }
+  })
+
+  it('should preserve pull state when a pending forget is cancelled', async t => {
+    let calls = 0
+    let releasePull = () => {}
+    const { manager, client } = createRequestor(t)
+    client.middleware.provideDiagnostics = () => {
+      calls++
+      if (calls === 1) return Promise.resolve({ kind: 'full', items: [] })
+      return new Promise(resolve => {
+        releasePull = () => resolve({ kind: 'full', items: [] })
+      })
+    }
+    t.mock.method(workspace.tabs, 'isVisible', () => true)
+    const doc = createDocument(1)
+    try {
+      await manager.pullAsync(doc)
+      manager.forgetDocument(doc)
+      await shared.waitValue(() => calls, 2)
+      assert.strictEqual(manager['pendingDocumentForgets'].size, 1)
+
+      manager.cancelPendingForget(doc)
+      releasePull()
+      await shared.waitValue(() => manager['openRequests'].size, 0)
+
+      assert.strictEqual(manager.knows(PullState.document, doc), true)
+    } finally {
+      releasePull()
+      manager.dispose()
+    }
+  })
+})
+
+describe('DiagnosticFeature', () => {
+  let nvim: Neovim
+  before(async () => {
+    nvim = workspace.nvim
+  })
+  afterEach(editorReset)
+
+  async function createServer(interFileDependencies: boolean, workspaceDiagnostics = false, middleware: lsclient.Middleware = {}, fun?: (opt: lsclient.LanguageClientOptions) => void) {
+    let clientOptions: lsclient.LanguageClientOptions = {
+      documentSelector: [{ language: '*' }],
+      middleware,
+      initializationOptions: {
+        interFileDependencies: interFileDependencies == true,
+        workspaceDiagnostics
+      }
+    }
+    if (fun) fun(clientOptions)
+    let serverModule = path.join(import.meta.dirname, './server/diagnosticServer.js')
+    let serverOptions: lsclient.ServerOptions = {
+      module: serverModule,
+      transport: lsclient.TransportKind.ipc
+    }
+    let client = new lsclient.LanguageClient('html', 'Test Language Server', serverOptions, clientOptions)
+    await client.start()
+    return client
+  }
+
+  function getUri(s: number | string): string {
+    let fsPath = path.join(os.tmpdir(), s.toString())
+    return URI.file(fsPath).toString()
+  }
+
+  it('should create push diagnostics collection lazily', async t => {
+    let client = await createServer(true)
+    assert.strictEqual(client['_diagnostics'], undefined)
+    await client.sendRequest('sendDiagnostics')
+    await shared.waitValue(() => {
+      return client['_diagnostics']?.has('file:///abc.txt')
+    }, true)
+    await client.stop()
+    assert.strictEqual(client['_diagnostics'], null)
+    assert.strictEqual(client.diagnostics, undefined)
+  })
+
+  it('should work when change visible editor', async t => {
+    let doc = await workspace.loadFile(getUri(1), 'edit')
+    await workspace.loadFile(getUri(3), 'tabe')
+    let client = await createServer(true)
+    await shared.wait(30)
+    await workspace.loadFile(getUri(2), 'edit')
+    await shared.wait(30)
+    await workspace.loadFile(getUri(3), 'tabe')
+    await shared.wait(30)
+    let feature = client.getFeature(DocumentDiagnosticRequest.method)
+    assert.notStrictEqual(feature, undefined)
+    let provider = feature.getProvider(doc.textDocument)
+    let res = provider.knows(PullState.document, doc.textDocument)
+    assert.strictEqual(res, false)
+    await client.stop()
+  })
+
+  it('should clean up diagnostics before close notification is sent', async t => {
+    let doc = await workspace.loadFile(getUri('close-diagnostic'), 'edit')
+    let client = await createServer(false, false, {}, opt => {
+      opt.diagnosticPullOptions = {
+        workspace: false
+      }
+    })
+    let diagnosticFeature = client.getFeature(DocumentDiagnosticRequest.method)
+    let provider = diagnosticFeature.getProvider(doc.textDocument)
+    await shared.waitValue(() => {
+      return provider.knows(PullState.document, doc.textDocument)
+    }, true)
+    await shared.wait(30)
+
+    let release!: () => void
+    let pending = new Promise<void>(resolve => {
+      release = resolve
+    })
+    let spy = t.mock.method(client, 'sendNotification', (type: any) => {
+      if (typeof type !== 'string' && type.method === DidCloseTextDocumentNotification.method) {
+        return pending
+      }
+      return Promise.resolve()
+    })
+    let closeSent = false
+    let closeFeature = client.getFeature(DidCloseTextDocumentNotification.method)
+    closeFeature.onNotificationSent(() => {
+      closeSent = true
+    })
+    let closeProvider = closeFeature.getProvider(doc.textDocument)
+    assert.notStrictEqual(closeProvider, undefined)
+
+    let close = closeProvider!.send(doc.textDocument)
+    await shared.waitValue(() => {
+      return provider.knows(PullState.document, doc.textDocument)
+    }, false)
+    assert.strictEqual(closeSent, false)
+
+    release()
+    await close
+    assert.strictEqual(closeSent, true)
+    await client.stop()
+  })
+
+  it('should cancel pending diagnostic forget after didOpen notification', async t => {
+    const doc = await workspace.loadFile(getUri('diagnostic-did-open'), 'edit')
+    const client = await createServer(false, true, {}, options => {
+      options.diagnosticPullOptions = { workspace: false }
+    })
+    try {
+      const feature = client.getFeature(DocumentDiagnosticRequest.method)
+      const provider = feature.getProvider(doc.textDocument)
+      const requestor = provider['diagnosticRequestor']
+      const cancelPendingForget = requestor.cancelPendingForget.bind(requestor)
+      let called = false
+      t.mock.method(requestor, 'cancelPendingForget', document => {
+        if (!(document instanceof URI)) called = true
+        cancelPendingForget(document)
+      })
+      const openFeature = client.getFeature(DidOpenTextDocumentNotification.method)
+      const openProvider = openFeature.getProvider(doc.textDocument)
+      assert.notStrictEqual(openProvider, undefined)
+
+      await openProvider!.send(doc.textDocument)
+
+      assert.strictEqual(called, true)
+    } finally {
+      await client.stop()
+    }
+  })
+
+  it('should preserve pull diagnostics when a tab is reopened', async () => {
+    let calls = 0
+    let holdNextPull = false
+    let pullStarted!: () => void
+    let releasePull!: () => void
+    const started = new Promise<void>(resolve => {
+      pullStarted = resolve
+    })
+    const pending = new Promise<void>(resolve => {
+      releasePull = resolve
+    })
+    const middleware: lsclient.Middleware = {
+      provideDiagnostics: async (document, previousResultId, token, next) => {
+        calls++
+        // The newly opened tab also starts a pull; hold the closing document's.
+        if (holdNextPull && (document instanceof URI ? document.toString() : document.uri) === uri) {
+          holdNextPull = false
+          pullStarted()
+          await pending
+        }
+        return await next(document, previousResultId, token)
+      }
+    }
+    let doc = await workspace.loadFile(getUri('quick-reopen'), 'edit')
+    const uri = doc.uri
+    const bufnr = doc.bufnr
+    let client = await createServer(false, true, middleware, options => {
+      options.diagnosticPullOptions = { onChange: true, workspace: false }
+    })
+    let feature = client.getFeature(DocumentDiagnosticRequest.method)
+    let provider = feature.getProvider(doc.textDocument)
+    const requestor = provider['diagnosticRequestor']
+    try {
+      await shared.waitValue(() => provider.knows(PullState.document, doc.textDocument), true)
+      await shared.waitValue(() => requestor['openRequests'].size, 0)
+
+      holdNextPull = true
+      await workspace.loadFile(getUri('quick-reopen-other'), 'edit')
+      await started
+      assert.strictEqual(requestor['pendingDocumentForgets'].size, 1)
+      await nvim.command(`buffer ${bufnr}`)
+      doc = workspace.getDocument(uri)!
+      await shared.waitValue(() => workspace.tabs.isVisible(doc.textDocument), true)
+      await shared.waitValue(() => requestor['pendingDocumentForgets'].size, 0)
+      releasePull()
+      await shared.waitValue(() => requestor['openRequests'].size, 0)
+
+      assert.strictEqual(provider.knows(PullState.document, doc.textDocument), true)
+      const previousCalls = calls
+      await doc.applyEdits([TextEdit.insert(Position.create(0, 0), 'x')])
+      await shared.waitValue(() => calls > previousCalls, true)
+    } finally {
+      releasePull()
+      await client.stop()
+    }
+  })
+
+  it('should filter by document selector', async t => {
+    let client = await createServer(true, false, {}, opt => {
+      opt.documentSelector = [{ language: 'vim' }]
+    })
+    let doc = await workspace.loadFile(getUri(1), 'edit')
+    await shared.wait(20)
+    let feature = client.getFeature(DocumentDiagnosticRequest.method)
+    let provider = feature.getProvider(TextDocument.create('file:///1', 'vim', 1, ''))
+    let res = provider.knows(PullState.document, doc.textDocument)
+    assert.strictEqual(res, false)
+    doc = await workspace.loadFile(getUri(2), 'edit')
+    await shared.waitValue(() => window.activeTextEditor?.uri === doc.uri, true)
+    provider.forget(doc.textDocument)
+    await client.stop()
+  })
+
+  it('should filter by ignore', async t => {
+    let client = await createServer(true, false, {}, opt => {
+      opt.diagnosticPullOptions = {
+        ignored: ['**/*.ts']
+      }
+    })
+    let doc = await workspace.loadFile(getUri('a.ts'), 'edit')
+    await shared.wait(20)
+    let feature = client.getFeature(DocumentDiagnosticRequest.method)
+    let provider = feature.getProvider(doc.textDocument)
+    let res = provider.knows(PullState.document, doc.textDocument)
+    assert.strictEqual(res, false)
+    await client.stop()
+  })
+
+  it('should not throw on request error', async t => {
+    let client = await createServer(true)
+    await workspace.loadFile(getUri('error'), 'edit')
+    await workspace.loadFile(getUri('cancel'), 'tabe')
+    await workspace.loadFile(getUri('retrigger'), 'tabe')
+    await shared.wait(20)
+    await nvim.command('normal! 2gt')
+    await workspace.loadFile(getUri('unchanged'), 'edit')
+    await shared.wait(20)
+    await client.stop()
+  })
+
+  it('should pull diagnostic on change', async t => {
+    let doc = await workspace.loadFile(getUri('change'), 'edit')
+    let client = await createServer(true, false, {}, opt => {
+      opt.diagnosticPullOptions = {
+        onChange: true,
+        filter: doc => {
+          return doc.uri.endsWith('filtered')
+        }
+      }
+    })
+    let feature = client.getFeature(DocumentDiagnosticRequest.method)
+    let provider = feature.getProvider(doc.textDocument)
+    await shared.waitValue(() => {
+      return provider.knows(PullState.document, doc.textDocument)
+    }, true)
+    await doc.applyEdits([TextEdit.insert(Position.create(0, 0), 'foo')])
+    await shared.waitValue(async () => {
+      let n = await client.sendRequest('getChangeCount') as number
+      return n >= 2
+    }, true)
+    await nvim.call('setline', [1, 'foo'])
+    let d = await workspace.loadFile(getUri('filtered'), 'tabe')
+    await d.applyEdits([TextEdit.insert(Position.create(0, 0), 'foo')])
+    await shared.wait(30)
+    feature.refresh()
+    await nvim.command(`bd! ${doc.bufnr}`)
+    await client.stop()
+  })
+
+  it('should pull diagnostic on save', async t => {
+    let doc = await workspace.loadFile(getUri(crypto.randomUUID() + 'filtered'), 'edit')
+    await doc.applyEdits([TextEdit.insert(Position.create(0, 0), 'foo')])
+    doc = await workspace.loadFile(getUri(crypto.randomUUID() + 'save'), 'tabe')
+    let client = await createServer(true, false, {}, opt => {
+      opt.diagnosticPullOptions = {
+        onSave: true,
+        filter: doc => {
+          return doc.uri.endsWith('filtered')
+        }
+      }
+    })
+    let feature = client.getFeature(DocumentDiagnosticRequest.method)
+    let provider = feature.getProvider(doc.textDocument)
+    await shared.waitValue(() => {
+      return provider.knows(PullState.document, doc.textDocument)
+    }, true)
+    await doc.applyEdits([TextEdit.insert(Position.create(0, 0), 'foo')])
+    await nvim.command('wa')
+    await shared.wait(20)
+    await client.stop()
+  })
+
+  it('should use provideDiagnostics middleware', async t => {
+    let called = false
+    let callHandle = false
+    let middleware = {
+      provideDiagnostics: (doc, id, token, next) => {
+        called = true
+        return next(doc, id, token)
+      },
+      handleDiagnostics: (uri, diagnostics, next) => {
+        callHandle = true
+        return next(uri, diagnostics)
+      }
+    }
+    let client = await createServer(true, false, middleware)
+    let feature = client.getFeature(DocumentDiagnosticRequest.method)
+    assert.notStrictEqual(feature, undefined)
+    let textDocument = TextDocument.create(getUri('empty'), 'e', 1, '')
+    let provider = feature.getProvider(textDocument)
+    let res = await provider.diagnostics.provideDiagnostics(textDocument, '', CancellationToken.None)
+    assert.strictEqual(called, true)
+    assert.deepStrictEqual(res, { kind: 'full', items: [] })
+    await shared.waitValue(() => {
+      return callHandle
+    }, true)
+    middleware.handleDiagnostics = undefined
+    await client.sendRequest('sendDiagnostics')
+    await client.stop()
+  })
+
+  it('should use provideWorkspaceDiagnostics middleware', async t => {
+    let called = false
+    let client = await createServer(false, true, {
+      provideWorkspaceDiagnostics: (resultIds, token, resultReporter, next) => {
+        called = true
+        return next(resultIds, token, resultReporter)
+      }
+    })
+    assert.strictEqual(called, true)
+    await shared.waitValue(async () => {
+      let count = await client.sendRequest('getWorkspaceCount') as number
+      return count > 1
+    }, true)
+    await client.stop()
+  })
+
+  it('should receive partial result', async t => {
+    let client = await createServer(false, true, {}, opt => {
+      opt.diagnosticPullOptions = {
+        workspace: false
+      }
+    })
+    let feature = client.getFeature(DocumentDiagnosticRequest.method)
+    let textDocument = TextDocument.create(getUri('empty'), 'e', 1, '')
+    let provider = feature.getProvider(textDocument)
+    let n = 0
+    await provider.diagnostics.provideWorkspaceDiagnostics([{ uri: 'uri', value: '1' }], CancellationToken.None, chunk => {
+      n++
+    })
+    assert.strictEqual(n, 4)
+    await client.stop()
+  })
+
+  it('should fire refresh event', async t => {
+    let client = await createServer(true, false, {})
+    let feature = client.getFeature(DocumentDiagnosticRequest.method)
+    let textDocument = TextDocument.create(getUri('1'), 'e', 1, '')
+    let provider = feature.getProvider(textDocument)
+    let called = false
+    provider.onDidChangeDiagnosticsEmitter.event(() => {
+      called = true
+    })
+    await client.sendNotification('fireRefresh')
+    await shared.waitValue(() => {
+      return called
+    }, true)
+    await client.stop()
+  })
+})

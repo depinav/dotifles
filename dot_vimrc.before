@@ -1,0 +1,22 @@
+call plug#begin()
+" List your plugins here
+  Plug 'tpope/vim-sensible'
+  Plug 'scrooloose/nerdtree'
+  Plug 'mhinz/vim-startify'
+  Plug 'tpope/vim-obsession'
+  Plug 'neoclide/coc.nvim'
+  Plug 'iamcco/markdown-preview.nvim'
+  Plug 'NLKNguyen/papercolor-theme'
+  Plug 'dense-analysis/ale'
+  Plug 'vim-airline/vim-airline'
+  Plug 'tpope/vim-fugitive'
+  Plug 'tpope/vim-surround'
+  Plug 'scrooloose/syntastic'
+  Plug 'airblade/vim-gitgutter'
+  Plug 'vim-airline/vim-airline-themes'
+  Plug 'valloric/youcompleteme'
+  Plug 'majutsushi/tagbar'
+  Plug 'kien/ctrlp.vim'
+  Plug 'tpope/vim-repeat'
+  Plug 'tpope/vim-commentary'
+call plug#end()

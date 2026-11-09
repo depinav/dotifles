@@ -1,0 +1,14 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	ignorecase = true
+	precomposeunicode = true
+	worktree = ../../../../../../../third_party/ycmd/third_party/mrab-regex-github
+[remote "origin"]
+	url = https://github.com/mrabarnett/mrab-regex
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "hg"]
+	remote = origin
+	merge = refs/heads/hg

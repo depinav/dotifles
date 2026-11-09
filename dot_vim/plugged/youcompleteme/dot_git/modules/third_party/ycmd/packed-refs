@@ -1,0 +1,12 @@
+# pack-refs with: peeled fully-peeled sorted 
+1827ebee82fd41dac408ffe4c7b1e867ac72ee7c refs/remotes/origin/auto
+f20bf47f94be99afed2188c753dc8ae9fa41e245 refs/remotes/origin/azure-pipelines
+8f2c91d92065928d63c1a84d64d3837e02b88daf refs/remotes/origin/clang-format
+0f8aa486a789a818eee0afaa5dc8053c66c777d0 refs/remotes/origin/legacy-c++11
+51b8998c82ff2c7ec02faa97f10de69735af66d9 refs/remotes/origin/legacy-py2
+a290328810cec343fc4df23ff86936cfa7630687 refs/remotes/origin/master
+0346bbe1b21d39a034e94842e8b4a79c2abeb6a5 refs/remotes/origin/no-webhook
+d588905f01ff1f22019278732b2be0c3bbbe26a7 refs/remotes/origin/pymetabind-namespace
+27b97a126323cd86bd6a151101c3f388eab8bc0f refs/remotes/origin/revert-1686-test-go1.20
+3ff3101f2c4d067210b01ca8d3294d6ad50e60fb refs/remotes/origin/signature-help
+ec9087b7ddcc9ca7f9bba4a75d39131646a4df07 refs/remotes/origin/try
