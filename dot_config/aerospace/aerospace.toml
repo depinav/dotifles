@@ -1,5 +1,6 @@
 # Place a copy of this config to ~/.aerospace.toml
 # After that, you can edit ~/.aerospace.toml to your liking
+config-version = 2
 
 # It's not necessary to copy all keys to your config.
 # If the key is missing in your config, "default-config.toml" will serve as a fallback
@@ -86,7 +87,7 @@ PATH = '/opt/homebrew/bin:/opt/homebrew/sbin:${PATH}'
 # alt-ctrl-cmd-enter = 'exec-and-forget open -n /System/Applications/Utilities/Terminal.app'
 
 # See: https://nikitabobko.github.io/AeroSpace/commands#layout
-alt-ctrl-cmd-ctrl-cmd-slash = 'layout tiles horizontal vertical'
+alt-ctrl-cmd-slash = 'layout tiles horizontal vertical'
 alt-ctrl-cmd-comma = 'layout accordion horizontal vertical'
 
 # See: https://nikitabobko.github.io/AeroSpace/commands#focus
@@ -193,27 +194,46 @@ alt-ctrl-cmd-shift-j = ['join-with down', 'mode main']
 alt-ctrl-cmd-shift-k = ['join-with up', 'mode main']
 alt-ctrl-cmd-shift-l = ['join-with right', 'mode main']
 
+alt-ctrl-cmd-shift-r = 'exec-and-forget /bin/bash -c "$HOME/.config/aerospace/reflow.sh"'
+
 [workspace-to-monitor-force-assignment]
-    1 = [1, 2]
-    2 = [2, 1]
-    3 = [1, 2]
-    4 = [2, 1]
-    5 = [1, 2]
-    6 = [2, 1]
+    1 = ['^DELL.*\(1\)', "built-in", "dell", 1, 2]
+    2 = ['^DELL.*\(2\)', "dell",  'built-in', 2, 1]
+    3 = ['^DELL.*\(1\)', 'OpenDisplay — iPad', 'built-in', 1, 2]
+    4 = ['iPad', "built-in", 2, 1]
+    6 = ["built-in", 2, 1]
+    9 = 'OpenDisplay'
 
 [[on-window-detected]]
     if.app-id = "com.apple.finder"
     run = 'layout floating'
-
 [[on-window-detected]]
-    if.app-id = "com.leapp.app"
+    if.app-id = "io.gong.klopper"
     run = 'layout floating'
-
-
-[[on-window-detected]]
-    if.app-id = "com.leapp.app"
-    run = 'layout floating'
-
 [[on-window-detected]]
     if.app-id = "com.1password.1password"
     run = 'layout floating'
+[[on-window-detected]]
+    if.app-id = "com.sarensx.MacPacker"
+    run = 'layout floating'
+
+# --- Route ALL apps via bash script ---
+[[on-window-detected]]
+    if.app-id = 'com.google.Chrome'
+    run = 'exec-and-forget /bin/bash -c "$HOME/.config/aerospace/router.sh browser"'
+
+[[on-window-detected]]
+    if.app-id = 'dev.zed.Zed'
+    run = 'exec-and-forget /bin/bash -c "$HOME/.config/aerospace/router.sh zed"'
+
+[[on-window-detected]]
+    if.app-id = 'com.mitchellh.ghostty'
+    run = 'exec-and-forget /bin/bash -c "$HOME/.config/aerospace/router.sh ghostty"'
+
+[[on-window-detected]]
+    if.app-id = 'com.tinyspeck.slackmacgap'
+    run = 'exec-and-forget /bin/bash -c "$HOME/.config/aerospace/router.sh slack"'
+
+[[on-window-detected]]
+    if.app-id = 'md.obsidian'
+    run = 'exec-and-forget /bin/bash -c "$HOME/.config/aerospace/router.sh obsidian"'
