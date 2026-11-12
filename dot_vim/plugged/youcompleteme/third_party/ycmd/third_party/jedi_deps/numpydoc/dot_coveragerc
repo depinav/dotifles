@@ -1,6 +1,0 @@
-[run]
-branch = True
-source = numpydoc
-omit =
-    numpydoc/tests/*
-    numpydoc/templates/*

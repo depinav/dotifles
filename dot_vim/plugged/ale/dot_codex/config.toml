@@ -1,9 +1,0 @@
-# Project-local Codex configuration.
-#
-# Command safety policy lives in .codex/rules/git-state.rules.
-
-[[hooks.Stop]]
-[[hooks.Stop.hooks]]
-type = "command"
-command = "cat >> .codex/stop-trigger"
-timeout = 1
