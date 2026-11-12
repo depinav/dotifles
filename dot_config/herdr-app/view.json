@@ -1,0 +1,327 @@
+{
+  "active": "spca00e1cc8afe49a889ba68e5adc38035",
+  "spaces": {
+    "192.168.1.74/spa9a6679c9a9ce61466431ef7f39207cd": "192.168.1.74/tb608176a4c3889426032f2ea3a1e22fa4",
+    "armbookpro/spa9a6679c9a9ce61466431ef7f39207cd": "armbookpro/tbca4544092bf74bcaa183650e31992e1f",
+    "sp8b77040ed9c35b543ffa3e40747ec1de": "tb100a1782615552727ebfd7e4ee03ce23",
+    "spca00e1cc8afe49a889ba68e5adc38035": "tb218601c93d4494c3adba021e79b34776"
+  },
+  "tabs": {
+    "192.168.1.74/tb5ffc6f1587ab52ab588250ab6084d273": {
+      "focused": "192.168.1.74/pd3c6fea379ca073972f1d9d7fa9aa78a",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "192.168.1.74/tb608176a4c3889426032f2ea3a1e22fa4": {
+      "focused": "192.168.1.74/p112ccabd2596a9c76a338af79c0d46cd",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "192.168.1.74/tb758c6806a072ad7f9b71a7217f1c2870": {
+      "focused": "192.168.1.74/p80f0d444b46094aee747e9b78fc15b5b",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "armbookpro/tb1d5fa93c7a4972445220b260c42f2d22": {
+      "focused": "armbookpro/p7ddfd5fc26410062e0a32b5968ce0036",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "armbookpro/tb5ffc6f1587ab52ab588250ab6084d273": {
+      "focused": "armbookpro/pd3c6fea379ca073972f1d9d7fa9aa78a",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "armbookpro/tb608176a4c3889426032f2ea3a1e22fa4": {
+      "focused": "armbookpro/p112ccabd2596a9c76a338af79c0d46cd",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "armbookpro/tbca4544092bf74bcaa183650e31992e1f": {
+      "focused": "armbookpro/pb50ac210f19b92ac2eadff1c80e1ca8a",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "tb100a1782615552727ebfd7e4ee03ce23": {
+      "focused": "pa17ec1b8469e7921bcc44ee1f94f7d54",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "tb218601c93d4494c3adba021e79b34776": {
+      "focused": "p36ccc8a099e9def4acc12209b94c43a8",
+      "before": [
+        "pbaaa655de285b575d6ea7716acaeb9ef"
+      ],
+      "zoomed": null,
+      "settled": null
+    },
+    "tbcdce5be783f7948b6930259b7876dd61": {
+      "focused": "p365645bcbeda628887e9a39077bb369c",
+      "before": [
+        "pfb05e1d9dc9221d8805bdfbbc2dafbf7"
+      ],
+      "zoomed": null,
+      "settled": null
+    }
+  },
+  "recent": [
+    {
+      "name": "",
+      "folder": "/Users/victor.depina@gong.io/.config"
+    }
+  ],
+  "attention": {
+    "192.168.1.74/t6": {
+      "word": "idle",
+      "seen": true
+    },
+    "192.168.1.74/t7": {
+      "word": null,
+      "seen": true
+    },
+    "192.168.1.74/t8": {
+      "word": null,
+      "seen": true
+    },
+    "192.168.1.74/t9": {
+      "word": null,
+      "seen": true
+    },
+    "armbookpro/t10": {
+      "word": null,
+      "seen": true
+    },
+    "armbookpro/t11": {
+      "word": null,
+      "seen": true
+    },
+    "armbookpro/t12": {
+      "word": null,
+      "seen": true
+    },
+    "armbookpro/t13": {
+      "word": null,
+      "seen": true
+    },
+    "armbookpro/t14": {
+      "word": "done",
+      "seen": true
+    },
+    "armbookpro/t6": {
+      "word": "idle",
+      "seen": true
+    },
+    "armbookpro/t7": {
+      "word": null,
+      "seen": true
+    },
+    "armbookpro/t8": {
+      "word": null,
+      "seen": true
+    },
+    "t1": {
+      "word": null,
+      "seen": true
+    },
+    "t10": {
+      "word": null,
+      "seen": true
+    },
+    "t11": {
+      "word": null,
+      "seen": true
+    },
+    "t12": {
+      "word": null,
+      "seen": true
+    },
+    "t13": {
+      "word": null,
+      "seen": true
+    },
+    "t14": {
+      "word": null,
+      "seen": true
+    },
+    "t15": {
+      "word": null,
+      "seen": true
+    },
+    "t16": {
+      "word": "working",
+      "seen": true
+    },
+    "t17": {
+      "word": null,
+      "seen": true
+    },
+    "t18": {
+      "word": null,
+      "seen": true
+    },
+    "t19": {
+      "word": null,
+      "seen": true
+    },
+    "t1b": {
+      "word": null,
+      "seen": true
+    },
+    "t1c": {
+      "word": null,
+      "seen": true
+    },
+    "t1d": {
+      "word": null,
+      "seen": true
+    },
+    "t1f": {
+      "word": null,
+      "seen": true
+    },
+    "t1g": {
+      "word": null,
+      "seen": true
+    },
+    "t1h": {
+      "word": null,
+      "seen": true
+    },
+    "t1j": {
+      "word": null,
+      "seen": true
+    },
+    "t1k": {
+      "word": null,
+      "seen": true
+    },
+    "t1m": {
+      "word": null,
+      "seen": true
+    },
+    "t1n": {
+      "word": null,
+      "seen": true
+    },
+    "t1p": {
+      "word": null,
+      "seen": true
+    },
+    "t1q": {
+      "word": null,
+      "seen": true
+    },
+    "t1r": {
+      "word": null,
+      "seen": true
+    },
+    "t1s": {
+      "word": null,
+      "seen": true
+    },
+    "t1t": {
+      "word": null,
+      "seen": true
+    },
+    "t1v": {
+      "word": null,
+      "seen": true
+    },
+    "t1w": {
+      "word": null,
+      "seen": true
+    },
+    "t1x": {
+      "word": "working",
+      "seen": true
+    },
+    "t1y": {
+      "word": null,
+      "seen": true
+    },
+    "t1z": {
+      "word": null,
+      "seen": true
+    },
+    "t2": {
+      "word": null,
+      "seen": true
+    },
+    "t20": {
+      "word": "done",
+      "seen": true
+    },
+    "t21": {
+      "word": null,
+      "seen": true
+    },
+    "t22": {
+      "word": null,
+      "seen": true
+    },
+    "t23": {
+      "word": null,
+      "seen": true
+    },
+    "t24": {
+      "word": null,
+      "seen": true
+    },
+    "t25": {
+      "word": "done",
+      "seen": true
+    },
+    "t26": {
+      "word": null,
+      "seen": true
+    },
+    "t27": {
+      "word": null,
+      "seen": true
+    },
+    "t28": {
+      "word": null,
+      "seen": true
+    },
+    "t29": {
+      "word": null,
+      "seen": true
+    },
+    "t3": {
+      "word": null,
+      "seen": true
+    },
+    "t4": {
+      "word": null,
+      "seen": true
+    },
+    "t5": {
+      "word": null,
+      "seen": true
+    },
+    "t6": {
+      "word": null,
+      "seen": true
+    },
+    "t7": {
+      "word": null,
+      "seen": true
+    },
+    "t8": {
+      "word": null,
+      "seen": true
+    },
+    "t9": {
+      "word": null,
+      "seen": true
+    }
+  }
+}
