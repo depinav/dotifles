@@ -105,12 +105,5 @@ source $ZSH/oh-my-zsh.sh
 
 eval "$(zoxide init zsh)"
 
-export JETBRAINS_LICENSE_SERVER="https://jetbrains-license-server.dev.gongio.net"
-
 ulimit -n 131072
-# The following lines have been added by Docker Desktop to enable Docker CLI completions.
-fpath=(/Users/victor.depina@gong.io/.docker/completions $fpath)
-autoload -Uz compinit
-compinit
-# End of Docker CLI completions
 eval "$(mise activate zsh)"
