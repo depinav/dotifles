@@ -107,3 +107,7 @@ eval "$(zoxide init zsh)"
 
 ulimit -n 131072
 eval "$(mise activate zsh)"
+
+if [ -n "$REX_BIN_DIR" ]; then
+    export PATH="$REX_BIN_DIR:$PATH"
+fi
